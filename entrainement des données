@@ -1,0 +1,119 @@
+import tensorflow as tf
+from tensorflow.keras.applications import EfficientNetB0 
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
+from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
+import os
+
+# Vérifiez les chemins
+data_dir = "E:\\projet ia\\archive\\chest_xray"  # Remplacez par le chemin local de votre dataset
+train_dir = os.path.join(data_dir, 'train')
+val_dir = os.path.join(data_dir, 'val')
+test_dir = os.path.join(data_dir, 'test')
+
+# Prétraitement des données avec ImageDataGenerator
+datagen = ImageDataGenerator(
+    rescale=1./255,  # Normalisation
+    rotation_range=10,  # Légères rotations
+    width_shift_range=0.1,  # Décalage horizontal
+    height_shift_range=0.1,  # Décalage vertical
+    zoom_range=0.1,  # Zoom
+    horizontal_flip=True  # Flip horizontal
+)
+
+# Chargement des données d'entraînement, validation, et test
+train_data = datagen.flow_from_directory(
+    train_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical'  # Changer en 'categorical' pour un encodage one-hot
+)
+
+val_data = datagen.flow_from_directory(
+    val_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical'  # Changer en 'categorical'
+)
+
+test_data = datagen.flow_from_directory(
+    test_dir,
+    target_size=(224, 224),
+    batch_size=32,
+    class_mode='categorical',  # Changer en 'categorical'
+    shuffle=False  # Pas besoin de mélanger les données de test
+)
+
+# Charger le modèle EfficientNetB0 pré-entraîné
+base_model = EfficientNetB0 (weights='imagenet', include_top=False, input_shape=(224, 224, 3))
+base_model.trainable = False  # Geler les poids pour le Transfer Learning
+
+# Construire le modèle
+model = Sequential([
+    base_model,
+    GlobalAveragePooling2D(),  # Convertit les features en vecteur
+    Dropout(0.3),              # Régularisation
+    Dense(128, activation='relu'),  # Couche Dense avec ReLU
+    Dropout(0.3),
+    Dense(2, activation='softmax')  # Couche de sortie pour deux classes
+])
+
+# Compiler le modèle
+model.compile(
+    optimizer='adam',
+    loss='categorical_crossentropy',  # Loss pour encodage one-hot
+    metrics=['accuracy']
+)
+
+# Résumé du modèle
+model.summary()
+
+# Définir les callbacks pour ModelCheckpoint et EarlyStopping
+checkpoint_filepath = "C:\\Users\\USER\\Desktop\\i2S1\\deep learning\\projetia"  # Chemin pour enregistrer le modèle
+model_checkpoint = ModelCheckpoint(
+    filepath=checkpoint_filepath,
+    monitor='val_accuracy',  # Critère pour sélectionner le meilleur modèle
+    save_best_only=True,     # Sauvegarde uniquement si le modèle s'améliore
+    mode='max',              # Cherche à maximiser la précision
+    verbose=1
+)
+
+early_stopping = EarlyStopping(
+    monitor='val_loss',      # Surveille la perte sur les données de validation
+    patience=5,              # Arrête l'entraînement après 5 époques sans amélioration
+    mode='min',              # Cherche à minimiser la perte
+    verbose=1,
+    restore_best_weights=True  # Restaure les poids du meilleur modèle
+)
+
+# Entraînement du modèle avec les callbacks
+history = model.fit(
+    train_data,
+    validation_data=val_data,
+    epochs=20,  # Nombre maximal d'époques
+    callbacks=[model_checkpoint, early_stopping]  # Ajout des callbacks
+)
+
+# Déblocage des couches pour Fine-Tuning
+base_model.trainable = True
+model.compile(
+    optimizer=tf.keras.optimizers.Adam(learning_rate=1e-5),
+    loss='categorical_crossentropy',  # Loss pour encodage one-hot
+    metrics=['accuracy']
+)
+
+# Fine-Tuning avec les callbacks
+history_fine = model.fit(
+    train_data,
+    validation_data=val_data,
+    epochs=10,  # Nombre maximal d'époques pour le fine-tuning
+    callbacks=[model_checkpoint, early_stopping]  # Callback actif ici aussi
+)
+
+# Charger le meilleur modèle
+best_model = tf.keras.models.load_model(checkpoint_filepath)
+
+# Évaluation sur les données de test avec le meilleur modèle
+test_loss, test_accuracy = best_model.evaluate(test_data)
+print(f"Test Accuracy: {test_accuracy * 100:.2f}%")
