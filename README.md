@@ -26,3 +26,4 @@ EarlyStopping pour éviter le surapprentissage,
 
 ModelCheckpoint pour sauvegarder les meilleurs poids.
 
+data est accessible sur ce site : https://www.kaggle.com/datasets/paultimothymooney/chest-xray-pneumonia
